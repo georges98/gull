@@ -150,7 +150,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(enablecappedWithdrawalLimit != _enablecappedWithdrawalLimit, "it's the same state");
         enablecappedWithdrawalLimit = _enablecappedWithdrawalLimit;
     }
 
