@@ -1,5 +1,5 @@
 # Gull Token
 
-Token Address : **0xcbF84469c66665b5ECFFDa15E1AEC19001995397**
+Token Address : **0x7aE38f6324DADe3855979094a5F9192356283985**
 
 Rinkedby Testnet Network
