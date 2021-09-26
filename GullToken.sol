@@ -10,7 +10,6 @@ import "./IUniswapV2Pair.sol";
 import "./SafeMath.sol";
 
 contract GullToken is ERC20,Ownable,AccessControl {
-
     using SafeMath for uint256;
     struct CappedWithdrawal {
         uint256 time;
@@ -58,7 +57,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         uniswapV2Router = _uniswapV2Router;
         uniswapV2Pair = _uniswapV2Pair;
         pair = IUniswapV2Pair(uniswapV2Pair);
-     
+    
         excludeFromFees(address(this), true);
         excludeFromFees(owner(), true);
         excludeFromFees(developer, true);
@@ -181,6 +180,8 @@ contract GullToken is ERC20,Ownable,AccessControl {
        require(acceptWithdraw(from,amount), "You exceeded the limit");
 
        uint256 newAmount = amount;
+
+       //tax fee calculation
        if((!_isExcludedFromFees[from] || !_isExcludedFromFees[to]) && enableTaxFee)
         {
             newAmount = _partialFee(from,amount);
@@ -198,6 +199,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
                 {
                         _cappedWithdrawalArray[from].amount = 0;
                 }
+                // increment the withrawal amount
                 if(cappedWithdrawalLimit >= (_cappedWithdrawalArray[from].amount + amount))
                 {              
                         _cappedWithdrawalArray[from].amount += amount;
@@ -234,29 +236,31 @@ contract GullToken is ERC20,Ownable,AccessControl {
         uint256 communityFeeAmount = (amount.mul(communityFee)).div(100);
         uint256 liquidityFeeAmount = (amount.mul(liquidityFee)).div(100);
 
+        // send Tax Funds to the smart contract
         if(from != address(this))
         {
                 super._transfer(from,address(this),totalFeeAmount);
         }
 
-        if(acceptSwap(marketFeeAmount))
+        // Check the balance of the smart contract before sending the tokens to avoid errors
+        if(balanceOf(address(this)) >= totalFees)
         {
-            swapTokensForEth(marketFeeAmount,marketing);
-        }
-        else{
-            super._transfer(address(this),marketing,marketFeeAmount);
-        }
+             // swap token for eth on both wallets
+            if(acceptSwap(marketFeeAmount))
+            {
+                swapTokensForEth(marketFeeAmount,marketing);
+            }
+            else{
+                super._transfer(address(this),marketing,marketFeeAmount);
+            }
 
-        if(acceptSwap(devFeeAmount))
-        {
-            swapTokensForEth(devFeeAmount,developer);
-        }
-        else{
-            super._transfer(address(this),developer,devFeeAmount);
-        }
-
-        if(balanceOf(address(this)) >= liquidityFeeAmount.add(communityFeeAmount))
-        {
+            if(acceptSwap(devFeeAmount))
+             {
+                swapTokensForEth(devFeeAmount,developer);
+             }
+            else{
+                super._transfer(address(this),developer,devFeeAmount);
+            }
              super._transfer(address(this),community,communityFeeAmount);
              super._transfer(address(this),liquidity,liquidityFeeAmount);
         }
@@ -274,7 +278,8 @@ contract GullToken is ERC20,Ownable,AccessControl {
             
             ERC20 token1 = ERC20(pair.token1());
             res1 = res1*(10**token1.decimals());
-
+            
+            // check that the reserve contains the eth needed for the swap
             if(res1 >= getTokenPrice(amount))
             {
                 result = true;
@@ -308,7 +313,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
    function getTokenPrice(uint256 amount) public view returns(uint256)
    {
         (uint256 res0, uint256 res1,) = pair.getReserves();
-        return((amount*res1)/res0); // return amount of token0 needed to buy token1
+        return((amount*res1)/res0); // return amount of eth needed to buy the token
    }
 
     function withdrawTokenFunds(address token) external onlyOwner {
