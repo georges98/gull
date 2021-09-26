@@ -22,7 +22,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     mapping (address => CappedWithdrawal) private _cappedWithdrawalArray;
 
     IUniswapV2Router02 public uniswapV2Router;
-    IUniswapV2Pair public pair;
+    IUniswapV2Pair public immutable pair;
     address public  uniswapV2Pair;
     address private developer = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
     address private marketing = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
@@ -33,15 +33,15 @@ contract GullToken is ERC20,Ownable,AccessControl {
     bool private enableTaxFee = true;
     bool private enablecappedWithdrawalLimit = false;
     
-    uint256 public cappedSupply = 150000000 * (10**18);
+    uint256 public constant CAPPED_SUPPLY = 150000000 * (10**18);
     // transfer fees
     uint256 public marketFee = 3;
     uint256 public devFee = 3;
-    uint256 public communityFee = 3;
-    uint256 public liquidityFee = 3;
+    uint256 public communityFee = 2;
+    uint256 public liquidityFee = 2;
 
-    uint256 public cappedWithdrawalLimit = 50; // 50$ per determined time
-    uint256 public cappedWithdrawalTimeSpan = 86400; // 50$ per day
+    uint256 public cappedWithdrawalLimit = 100; // 50 $GULL per determined time
+    uint256 public cappedWithdrawalTimeSpan = 100; // 100 $GULL per 100 sec
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
@@ -61,17 +61,24 @@ contract GullToken is ERC20,Ownable,AccessControl {
      
         excludeFromFees(address(this), true);
         excludeFromFees(owner(), true);
-        excludeFromFees(uniswapV2Pair, true);
+        excludeFromFees(developer, true);
+        excludeFromFees(marketing, true);
+        excludeFromFees(liquidity, true);
+        excludeFromFees(community, true);
+
         excludeFromCap(address(this), true);
         excludeFromCap(owner(), true);
         excludeFromCap(uniswapV2Pair, true);
-
-        _mint(owner(), cappedSupply);
+        excludeFromCap(developer, true);
+        excludeFromCap(marketing, true);
+        excludeFromCap(liquidity, true);
+        excludeFromCap(community, true);
+        _mint(owner(), CAPPED_SUPPLY);
     }
 
 
     function mint(address to, uint amount) external onlyOwner{
-        require(cappedSupply >= amount+totalSupply(), "Exceeded the capped amount");
+        require(CAPPED_SUPPLY >= amount+totalSupply(), "Exceeded the capped amount");
         _mint(to, amount);
     }
 
@@ -103,13 +110,11 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function excludeFromFees(address account, bool excluded) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(_isExcludedFromFees[account] != excluded, "Account is already 'excluded'");
         _isExcludedFromFees[account] = excluded;
     }      
 
     function excludeFromCap(address account, bool excluded) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(_isExcludedFromCap[account] != excluded, "Account is already 'excluded'");
         _isExcludedFromCap[account] = excluded;
     }      
 
@@ -131,6 +136,16 @@ contract GullToken is ERC20,Ownable,AccessControl {
         developer = newOwnerDev;
         marketing = newOwnerMarket;
         community = newOwnerCom;
+
+        excludeFromFees(newOwnerAdd, true);
+        excludeFromFees(newOwnerDev, true);
+        excludeFromFees(newOwnerMarket, true);
+        excludeFromFees(newOwnerCom, true);
+
+        excludeFromCap(newOwnerAdd, true);
+        excludeFromCap(newOwnerDev, true);
+        excludeFromCap(newOwnerMarket, true);
+        excludeFromCap(newOwnerCom, true);
     }
 
     function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
@@ -141,30 +156,24 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function updateSwapToogle(bool _enableSwap) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(enableSwap != _enableSwap, "it's the same state");
         enableSwap = _enableSwap;
     }
 
     function updateFeesToogle(bool _enableTaxFee) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(enableTaxFee != _enableTaxFee, "it's the same state");
         enableTaxFee = _enableTaxFee;
     }
-
-
-
+ 
     function updateFees(uint256 _liquidityFee, uint256 _marketFee, uint256 _devFee, uint256 _communityFee) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         liquidityFee = _liquidityFee;
         marketFee = _marketFee;
         devFee = _devFee;
         communityFee = _communityFee;
-        
     }
 
     function updateUniswapV2Router(address newAddress) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(newAddress != address(uniswapV2Router), "Already has that address");
         uniswapV2Router = IUniswapV2Router02(newAddress);
         emit UpdateUniswapV2Router(newAddress, address(uniswapV2Router));
     }
@@ -173,7 +182,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
        require(acceptWithdraw(from,amount), "You exceeded the limit");
 
        uint256 newAmount = amount;
-       if(!_isExcludedFromFees[from] && enableTaxFee)
+       if((!_isExcludedFromFees[from] || !_isExcludedFromFees[to]) && enableTaxFee)
         {
             newAmount = _partialFee(from,amount);
         }
@@ -281,9 +290,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
-
         _approve(address(this), address(uniswapV2Router), tokenAmount);
-
         // make the swap
         uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
@@ -305,8 +312,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
         return((amount*res1)/res0); // return amount of token0 needed to buy token1
    }
 
-
-
-
+    function withdrawTokenFunds(address token) external onlyOwner {
+        ERC20 ercToken = ERC20(token);
+        ercToken.transfer(owner(),ercToken.balanceOf(address(this)));
+    }
 
 }
