@@ -1,5 +1,5 @@
 # Gull Token
 
-Token Address : **0x7aE38f6324DADe3855979094a5F9192356283985**
+Token Address : **0xc537F9C3d0100D6c9C5bcec60fB192BDd9Ec3D62**
 
-Rinkedby Testnet Network
+Rinkedby Testnet Bsc Test Network
