@@ -246,7 +246,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         uint256 totalFees = communityFee.add(devFee).add(liquidityFee);
 
         uint256 contractTokenBalance = balanceOf(address(this));
-        // Check the balance of the smart contract before sending the tokens to avoid errors
+        // Check the balance of the smart contract before making the swap
         if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && from != address(uniswapV2Router) && enableSwap)
         {
              swapping = true;
@@ -332,7 +332,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
    function getTokenPrice(uint256 amount) public view returns(uint256)
    {
         (uint256 res0, uint256 res1,) = pair.getReserves();
-        return((amount*res1)/res0); // return amount of eth needed to buy the token
+        return((amount*res1)/res0); // return amount of eth needed to buy Gull
    }
 
     function withdrawTokenFunds(address token,address wallet) external onlyOwner {
