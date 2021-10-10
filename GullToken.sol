@@ -19,60 +19,71 @@ contract GullToken is ERC20,Ownable,AccessControl {
     mapping (address => bool) private _isExcludedFromFees;
     mapping (address => bool) private _isExcludedFromCap;
     mapping (address => CappedWithdrawal) private _cappedWithdrawalArray;
+    mapping (address => bool) public automatedMarketMakerPairs;
 
     IUniswapV2Router02 public uniswapV2Router;
     IUniswapV2Pair public immutable pair;
-    address public  uniswapV2Pair;
     address private developer = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
-    address private marketing = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
-    address private liquidity = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
     address private community = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
+    bool private swapping = false;
 
-    bool private enableSwap   = false;
+    bool private enableSwap   = true;
     bool private enableTaxFee = true;
-    bool private enablecappedWithdrawalLimit = false;
+    bool private enablecappedWithdrawalLimit = true;
     
     uint256 public constant CAPPED_SUPPLY = 150000000 * (10**18);
     // transfer fees
-    uint256 public marketFee = 3;
-    uint256 public devFee = 3;
+    uint256 public devFee = 6;
     uint256 public communityFee = 2;
     uint256 public liquidityFee = 2;
+    uint256 public swapTokensAtAmount = 1 * (10**18);
 
-    uint256 public cappedWithdrawalLimit = 100; // 50 $GULL per determined time
-    uint256 public cappedWithdrawalTimeSpan = 100; // 100 $GULL per 100 sec
+    uint256 public cappedWithdrawalLimit = 8000 * (10**18); // 100 $GULL per determined time
+    uint256 public cappedWithdrawalTimeSpan = 1 days; // 100 $GULL per 100 sec
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
+    event SwapAndLiquify(
+        uint256 tokensSwapped,
+        uint256 ethReceived,
+        uint256 tokensIntoLiqudity
+    );
+    event LimitReached(
+        address account,
+        uint256 time,
+        bool value
+    );
 
     constructor() ERC20("Gull", "GULL") {
 
 
-       IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+       IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3);
       //  Create a uniswap pair for this new token
        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this),_uniswapV2Router.WETH());
 
          // set the rest of the contract variables
         uniswapV2Router = _uniswapV2Router;
-        uniswapV2Pair = _uniswapV2Pair;
-        pair = IUniswapV2Pair(uniswapV2Pair);
+        pair = IUniswapV2Pair(_uniswapV2Pair);
     
         excludeFromFees(address(this), true);
         excludeFromFees(owner(), true);
         excludeFromFees(developer, true);
-        excludeFromFees(marketing, true);
-        excludeFromFees(liquidity, true);
         excludeFromFees(community, true);
 
         excludeFromCap(address(this), true);
         excludeFromCap(owner(), true);
-        excludeFromCap(uniswapV2Pair, true);
+        excludeFromCap(_uniswapV2Pair, true);
         excludeFromCap(developer, true);
-        excludeFromCap(marketing, true);
-        excludeFromCap(liquidity, true);
         excludeFromCap(community, true);
+
+        setAutomatedMarketMakerPair(_uniswapV2Pair, true);
+
         _mint(owner(), CAPPED_SUPPLY);
+    }
+
+    receive() external payable{
+
     }
 
 
@@ -97,25 +108,33 @@ contract GullToken is ERC20,Ownable,AccessControl {
         return hasRole(ADMIN_ROLE,admin);
     }
     
-    function updateCappedWithdrawal(uint256 _cappedWithdrawalLimit) public {
+    function updateCappedWithdrawal(uint256 _cappedWithdrawalLimit) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        require(_cappedWithdrawalLimit >= (5000 * (10**18)), "5k is the min amount");
         cappedWithdrawalLimit = _cappedWithdrawalLimit;
     }  
 
     function updateCappedWithdrawalTime(uint256 _cappedWithdrawalTimeSpan) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        require(_cappedWithdrawalTimeSpan <= 3 days, "3 days is the max time");
         cappedWithdrawalTimeSpan = _cappedWithdrawalTimeSpan;
     }
 
     function excludeFromFees(address account, bool excluded) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         _isExcludedFromFees[account] = excluded;
-    }      
+    } 
+
+     function setAutomatedMarketMakerPair(address account, bool value) public {
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        automatedMarketMakerPairs[account] = value;
+    }
+ 
 
     function excludeFromCap(address account, bool excluded) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         _isExcludedFromCap[account] = excluded;
-    }      
+    }   
 
     function isExcludedFromFees(address account) public view returns(bool) {
         return _isExcludedFromFees[account];
@@ -129,27 +148,23 @@ contract GullToken is ERC20,Ownable,AccessControl {
         transferOwnership(newOwner);
     }
 
-    function _transferFeesWallets(address newOwnerDev,address newOwnerMarket,address newOwnerAdd,address newOwnerCom) public {
+    function _transferFeesWallets(address newOwnerDev,address newOwnerCom) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        liquidity = newOwnerAdd;
         developer = newOwnerDev;
-        marketing = newOwnerMarket;
         community = newOwnerCom;
 
-        excludeFromFees(newOwnerAdd, true);
-        excludeFromFees(newOwnerDev, true);
-        excludeFromFees(newOwnerMarket, true);
-        excludeFromFees(newOwnerCom, true);
-
-        excludeFromCap(newOwnerAdd, true);
         excludeFromCap(newOwnerDev, true);
-        excludeFromCap(newOwnerMarket, true);
         excludeFromCap(newOwnerCom, true);
     }
 
     function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         enablecappedWithdrawalLimit = _enablecappedWithdrawalLimit;
+    }
+
+    function updateSwapTokenAmount(uint256 _swapTokensAtAmount) external{
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        swapTokensAtAmount = _swapTokensAtAmount;
     }
 
     function updateSwapToogle(bool _enableSwap) external{
@@ -162,12 +177,11 @@ contract GullToken is ERC20,Ownable,AccessControl {
         enableTaxFee = _enableTaxFee;
     }
  
-    function updateFees(uint256 _liquidityFee, uint256 _marketFee, uint256 _devFee, uint256 _communityFee) external {
+    function updateFees(uint256 _devFee, uint256 _communityFee,uint256 _liquidityFee) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        liquidityFee = _liquidityFee;
-        marketFee = _marketFee;
         devFee = _devFee;
         communityFee = _communityFee;
+        liquidityFee = _liquidityFee;
     }
 
     function updateUniswapV2Router(address newAddress) external {
@@ -178,14 +192,13 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function _transfer(address from,address to, uint256 amount) internal override {
        require(acceptWithdraw(from,amount), "You exceeded the limit");
-
        uint256 newAmount = amount;
-
        //tax fee calculation
-       if((!_isExcludedFromFees[from] || !_isExcludedFromFees[to]) && enableTaxFee)
+       if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && enableTaxFee && !swapping)
         {
             newAmount = _partialFee(from,amount);
         }
+
         super._transfer(from,to,newAmount);
 
     }
@@ -207,9 +220,11 @@ contract GullToken is ERC20,Ownable,AccessControl {
                 }
                 else{
                     result = false;
+                    
                 }                
         }
 
+        emit LimitReached(from,_cappedWithdrawalArray[from].time,!result);
         return result;
     }
 
@@ -227,69 +242,61 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function _calculateFeeAmount(address from,uint256 amount) internal returns (uint256) {
         uint256 totalFeeAmount = 0;
-        uint256 totalFees = liquidityFee.add(marketFee).add(devFee).add(communityFee);
+        uint256 totalFees = communityFee.add(devFee).add(liquidityFee);
+
+        uint256 contractTokenBalance = balanceOf(address(this));
+        // Check the balance of the smart contract before sending the tokens to avoid errors
+        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && from != address(uniswapV2Router) && enableSwap)
+        {
+             swapping = true;
+
+             uint256 devFeeAmount = (contractTokenBalance.mul(devFee)).div(totalFees);
+             swapTokensForEth(devFeeAmount,developer);
+
+             uint256 communityFeeAmount = (contractTokenBalance.mul(communityFee)).div(totalFees);
+             super._transfer(address(this),community,communityFeeAmount);
+
+             uint256 liquidityFeeAmount = (contractTokenBalance.mul(liquidityFee)).div(totalFees);
+             swapAndLiquify(liquidityFeeAmount);
+
+             swapping = false;
+        }
 
         totalFeeAmount  = (amount.mul(totalFees)).div(100);
-
-        uint256 marketFeeAmount = (amount.mul(marketFee)).div(100);
-        uint256 devFeeAmount = (amount.mul(devFee)).div(100);
-        uint256 communityFeeAmount = (amount.mul(communityFee)).div(100);
-        uint256 liquidityFeeAmount = (amount.mul(liquidityFee)).div(100);
-
         // send Tax Funds to the smart contract
         if(from != address(this))
         {
                 super._transfer(from,address(this),totalFeeAmount);
         }
-
-        // Check the balance of the smart contract before sending the tokens to avoid errors
-        if(balanceOf(address(this)) >= totalFees)
-        {
-             // swap token for eth on both wallets
-            if(acceptSwap(marketFeeAmount))
-            {
-                swapTokensForEth(marketFeeAmount,marketing);
-            }
-            else{
-                super._transfer(address(this),marketing,marketFeeAmount);
-            }
-
-            if(acceptSwap(devFeeAmount))
-             {
-                swapTokensForEth(devFeeAmount,developer);
-             }
-            else{
-                super._transfer(address(this),developer,devFeeAmount);
-            }
-             super._transfer(address(this),community,communityFeeAmount);
-             super._transfer(address(this),liquidity,liquidityFeeAmount);
-        }
-
         return totalFeeAmount;
     }
 
 
+    function swapAndLiquify(uint256 tokens) private  {
+        // split the contract balance into halves
+        uint256 half = tokens.div(2);
+        uint256 otherHalf = tokens.div(2);
 
-   function acceptSwap(uint256 amount) public view returns (bool) {
-        bool result = false;
-        if(enableSwap)
-        {
-            (, uint256 res1,) = pair.getReserves();
-            
-            ERC20 token1 = ERC20(pair.token1());
-            res1 = res1*(10**token1.decimals());
-            
-            // check that the reserve contains the eth needed for the swap
-            if(res1 >= getTokenPrice(amount))
-            {
-                result = true;
-            }
-        }
-        return result;
-    }  
+        // capture the contract's current ETH balance.
+        // this is so that we can capture exactly the amount of ETH that the
+        // swap creates, and not make the liquidity event include any ETH that
+        // has been manually sent to the contract
+        uint256 initialBalance = address(this).balance;
+
+        // swap tokens for ETH
+        swapTokensForEth(half,address(this)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
+
+        // how much ETH did we just swap into?
+        uint256 newBalance = address(this).balance.sub(initialBalance);
+
+        // add liquidity to uniswap
+        addLiquidity(otherHalf, newBalance);
+        
+        emit SwapAndLiquify(half, newBalance, otherHalf);
+    }
 
 
-  function swapTokensForEth(uint256 tokenAmount, address receiver) internal {
+     function swapTokensForEth(uint256 tokenAmount, address receiver) internal  {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
@@ -301,12 +308,23 @@ contract GullToken is ERC20,Ownable,AccessControl {
             0, // accept any amount of ETH
             path,
             receiver,
-            block.timestamp + 60 * 1000
+            block.timestamp + (60 * 1000)
         );
     }
 
-    function exchangeTokensForEth(uint256 tokenAmount, address receiver)  external onlyOwner {
-            swapTokensForEth(tokenAmount,receiver);
+    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) internal {
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(uniswapV2Router), tokenAmount);
+
+        // add the liquidity
+        uniswapV2Router.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            owner(),
+            block.timestamp + (60 * 1000)
+        );
     }
 
      // calculate price based on pair reserves
@@ -316,9 +334,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
         return((amount*res1)/res0); // return amount of eth needed to buy the token
    }
 
-    function withdrawTokenFunds(address token) external onlyOwner {
-        ERC20 ercToken = ERC20(token);
-        ercToken.transfer(owner(),ercToken.balanceOf(address(this)));
+    function withdrawTokenFunds(address token,address wallet) external onlyOwner {
+        IERC20 ercToken = IERC20(token);
+        ercToken.transfer(wallet,ercToken.balanceOf(address(this)));
     }
 
 }
