@@ -72,6 +72,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromFees(community, true);
 
         excludeFromCap(address(this), true);
+        excludeFromCap(address(_uniswapV2Router), true);
         excludeFromCap(owner(), true);
         excludeFromCap(_uniswapV2Pair, true);
         excludeFromCap(developer, true);
