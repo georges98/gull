@@ -88,7 +88,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     }
 
-
     function mint(address to, uint amount) external onlyOwner{
         require(CAPPED_SUPPLY >= amount+totalSupply(), "Exceeded the capped amount");
         _mint(to, amount);
@@ -199,7 +198,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
        require(acceptWithdraw(from,amount), "You exceeded the limit");
        uint256 newAmount = amount;
        //tax fee calculation
-       if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && enableTaxFee && !swapping)
+       if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && enableTaxFee)
         {
             newAmount = _partialFee(from,amount);
         }
@@ -251,7 +250,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
         uint256 contractTokenBalance = balanceOf(address(this));
         // Check the balance of the smart contract before making the swap
-        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && enableSwap)
+        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && enableSwap && !swapping)
         {
              swapping = true;
 
