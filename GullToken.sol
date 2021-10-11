@@ -36,7 +36,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     uint256 public devFee = 6;
     uint256 public communityFee = 2;
     uint256 public liquidityFee = 2;
-    uint256 public swapTokensAtAmount = 1 * (10**18);
+    uint256 public swapTokensAtAmount = 10000 * (10**18);
 
     uint256 public cappedWithdrawalLimit = 8000 * (10**18); // 100 $GULL per determined time
     uint256 public cappedWithdrawalTimeSpan = 1 days; // 100 $GULL per 100 sec
@@ -79,6 +79,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromCap(community, true);
 
         setAutomatedMarketMakerPair(_uniswapV2Pair, true);
+        setAutomatedMarketMakerPair(address(uniswapV2Router), true);
 
         _mint(owner(), CAPPED_SUPPLY);
     }
@@ -156,6 +157,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
         excludeFromCap(newOwnerDev, true);
         excludeFromCap(newOwnerCom, true);
+        
+        excludeFromFees(newOwnerDev, true);
+        excludeFromFees(newOwnerCom, true);
     }
 
     function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
@@ -247,7 +251,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
         uint256 contractTokenBalance = balanceOf(address(this));
         // Check the balance of the smart contract before making the swap
-        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && from != address(uniswapV2Router) && enableSwap)
+        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && enableSwap)
         {
              swapping = true;
 
