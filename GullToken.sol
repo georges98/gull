@@ -15,7 +15,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         uint256 time;
         uint256 amount;
     }
-
+    
     mapping (address => bool) private _isExcludedFromFees;
     mapping (address => bool) private _isExcludedFromCap;
     mapping (address => CappedWithdrawal) private _cappedWithdrawalArray;
@@ -23,8 +23,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     IUniswapV2Router02 public uniswapV2Router;
     IUniswapV2Pair public immutable pair;
-    address private developer = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
-    address private community = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
+    address private developer = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
+    address private community = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
+    address private liquidity = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
     bool private swapping = false;
 
     bool private enableSwap   = true;
@@ -36,23 +37,13 @@ contract GullToken is ERC20,Ownable,AccessControl {
     uint256 public devFee = 6;
     uint256 public communityFee = 2;
     uint256 public liquidityFee = 2;
-    uint256 public swapTokensAtAmount = 10000 * (10**18);
+    uint256 public swapTokensAtAmount = 1000 * (10**18);
 
-    uint256 public cappedWithdrawalLimit = 8000 * (10**18); // 100 $GULL per determined time
-    uint256 public cappedWithdrawalTimeSpan = 1 days; // 100 $GULL per 100 sec
+    uint256 public cappedWithdrawalLimit = 20000 * (10**18); // 80000 $GULL per determined time
+    uint256 public cappedWithdrawalTimeSpan = 1 days; // 80000 $GULL per 1 day
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
-    event SwapAndLiquify(
-        uint256 tokensSwapped,
-        uint256 ethReceived,
-        uint256 tokensIntoLiqudity
-    );
-    event LimitReached(
-        address account,
-        uint256 time,
-        bool value
-    );
 
     constructor() ERC20("Gull", "GULL") {
 
@@ -70,6 +61,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromFees(owner(), true);
         excludeFromFees(developer, true);
         excludeFromFees(community, true);
+        excludeFromFees(liquidity, true);
 
         excludeFromCap(address(this), true);
         excludeFromCap(address(_uniswapV2Router), true);
@@ -77,11 +69,13 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromCap(_uniswapV2Pair, true);
         excludeFromCap(developer, true);
         excludeFromCap(community, true);
+        excludeFromCap(liquidity, true);
+        
 
         setAutomatedMarketMakerPair(_uniswapV2Pair, true);
         setAutomatedMarketMakerPair(address(uniswapV2Router), true);
 
-        _mint(owner(), CAPPED_SUPPLY);
+        _mint(owner(), 13200000 * (10**18));
     }
 
     receive() external payable{
@@ -111,7 +105,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     
     function updateCappedWithdrawal(uint256 _cappedWithdrawalLimit) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-        require(_cappedWithdrawalLimit >= (5000 * (10**18)), "5k is the min amount");
+        require(_cappedWithdrawalLimit >= (1000 * (10**18)), "1k is the min amount");
         cappedWithdrawalLimit = _cappedWithdrawalLimit;
     }  
 
@@ -149,16 +143,19 @@ contract GullToken is ERC20,Ownable,AccessControl {
         transferOwnership(newOwner);
     }
 
-    function _transferFeesWallets(address newOwnerDev,address newOwnerCom) public {
+    function _transferFeesWallets(address newOwnerDev,address newOwnerCom,address newOwnerLiq) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         developer = newOwnerDev;
         community = newOwnerCom;
+        liquidity = newOwnerLiq;
 
         excludeFromCap(newOwnerDev, true);
         excludeFromCap(newOwnerCom, true);
+        excludeFromCap(newOwnerLiq, true);
         
         excludeFromFees(newOwnerDev, true);
         excludeFromFees(newOwnerCom, true);
+        excludeFromFees(newOwnerLiq, true);
     }
 
     function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
@@ -204,7 +201,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
         }
 
         super._transfer(from,to,newAmount);
-
     }
 
     function acceptWithdraw(address from,uint256 amount) internal returns (bool) {
@@ -228,7 +224,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
                 }                
         }
 
-        emit LimitReached(from,_cappedWithdrawalArray[from].time,!result);
         return result;
     }
 
@@ -261,7 +256,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
              super._transfer(address(this),community,communityFeeAmount);
 
              uint256 liquidityFeeAmount = (contractTokenBalance.mul(liquidityFee)).div(totalFees);
-             swapAndLiquify(liquidityFeeAmount);
+             super._transfer(address(this),liquidity,liquidityFeeAmount);
 
              swapping = false;
         }
@@ -273,30 +268,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
                 super._transfer(from,address(this),totalFeeAmount);
         }
         return totalFeeAmount;
-    }
-
-
-    function swapAndLiquify(uint256 tokens) private  {
-        // split the contract balance into halves
-        uint256 half = tokens.div(2);
-        uint256 otherHalf = tokens.div(2);
-
-        // capture the contract's current ETH balance.
-        // this is so that we can capture exactly the amount of ETH that the
-        // swap creates, and not make the liquidity event include any ETH that
-        // has been manually sent to the contract
-        uint256 initialBalance = address(this).balance;
-
-        // swap tokens for ETH
-        swapTokensForEth(half,address(this)); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
-
-        // how much ETH did we just swap into?
-        uint256 newBalance = address(this).balance.sub(initialBalance);
-
-        // add liquidity to uniswap
-        addLiquidity(otherHalf, newBalance);
-        
-        emit SwapAndLiquify(half, newBalance, otherHalf);
     }
 
 
@@ -312,21 +283,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
             0, // accept any amount of ETH
             path,
             receiver,
-            block.timestamp + (60 * 1000)
-        );
-    }
-
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) internal {
-        // approve token transfer to cover all possible scenarios
-        _approve(address(this), address(uniswapV2Router), tokenAmount);
-
-        // add the liquidity
-        uniswapV2Router.addLiquidityETH{value: ethAmount}(
-            address(this),
-            tokenAmount,
-            0, // slippage is unavoidable
-            0, // slippage is unavoidable
-            owner(),
             block.timestamp + (60 * 1000)
         );
     }
