@@ -39,8 +39,8 @@ contract GullToken is ERC20,Ownable,AccessControl {
     uint256 public liquidityFee = 2;
     uint256 public swapTokensAtAmount = 1000 * (10**18);
 
-    uint256 public cappedWithdrawalLimit = 20000 * (10**18); // 80000 $GULL per determined time
-    uint256 public cappedWithdrawalTimeSpan = 1 days; // 80000 $GULL per 1 day
+    uint256 public cappedWithdrawalLimit = 20000 * (10**18); // 20000 $GULL per determined time
+    uint256 public cappedWithdrawalTimeSpan = 1 days; // 20000 $GULL per 1 day
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
