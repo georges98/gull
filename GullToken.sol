@@ -48,7 +48,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     constructor() ERC20("Gull", "GULL") {
 
 
-       IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x84B30AaC7F5aBb0b5447EB1AB9F54fFb0D5b1eFb);
+       IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
       //  Create a uniswap pair for this new token
        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this),_uniswapV2Router.WETH());
