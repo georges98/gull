@@ -83,9 +83,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     }
 
     function mint(address to, uint amount) external onlyOwner{
-        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         require(CAPPED_SUPPLY >= amount+totalSupply(), "Exceeded the capped amount");
-
         _mint(to, amount);
     }
 
