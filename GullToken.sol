@@ -82,20 +82,28 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     }
 
-    function mint(address to, uint amount) external onlyOwner{
+    function mint(address to, uint amount) external{
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         require(CAPPED_SUPPLY >= amount+totalSupply(), "Exceeded the capped amount");
+
         _mint(to, amount);
     }
 
-    function burn(address owner, uint amount) external onlyOwner{
-        _burn(owner, amount);
+    function burn(address account, uint amount) external{
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+
+        _burn(account, amount);
     }
 
-    function addAdminRole(address admin) public onlyOwner{
+    function addAdminRole(address admin) public{
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+
         _setupRole(ADMIN_ROLE, admin);
     }
 
-    function revokeAdminRole(address admin) public onlyOwner{
+    function revokeAdminRole(address admin) public {
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+
         revokeRole(ADMIN_ROLE, admin);
     }
 
@@ -158,7 +166,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromFees(newOwnerLiq, true);
     }
 
-    function updateCappedWithdrawalToogle(bool _enablecappedWithdrawalLimit) external{
+    function updateCappedWithdrawalToggle(bool _enablecappedWithdrawalLimit) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         enablecappedWithdrawalLimit = _enablecappedWithdrawalLimit;
     }
@@ -168,12 +176,12 @@ contract GullToken is ERC20,Ownable,AccessControl {
         swapTokensAtAmount = _swapTokensAtAmount;
     }
 
-    function updateSwapToogle(bool _enableSwap) external{
+    function updateSwapToggle(bool _enableSwap) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         enableSwap = _enableSwap;
     }
 
-    function updateFeesToogle(bool _enableTaxFee) external{
+    function updateFeesToggle(bool _enableTaxFee) external{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         enableTaxFee = _enableTaxFee;
     }
@@ -193,6 +201,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function _transfer(address from,address to, uint256 amount) internal override {
        require(acceptWithdraw(from,amount), "You exceeded the limit");
+       require(to != address(0), "Address should not be 0");
+       require(amount > 0, "Amount should be greater than 0");
+
        uint256 newAmount = amount;
        //tax fee calculation
        if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && enableTaxFee && !swapping)
@@ -294,7 +305,10 @@ contract GullToken is ERC20,Ownable,AccessControl {
         return((amount*res1)/res0); // return amount of eth needed to buy Gull
    }
 
-    function withdrawTokenFunds(address token,address wallet) external onlyOwner {
+    function withdrawTokenFunds(address token,address wallet) external {
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        require(wallet != address(0), "Wallet should not be 0");
+
         IERC20 ercToken = IERC20(token);
         ercToken.transfer(wallet,ercToken.balanceOf(address(this)));
     }
