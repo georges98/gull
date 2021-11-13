@@ -216,14 +216,16 @@ contract GullToken is ERC20,Ownable,AccessControl {
        require(amount > 0, "Amount should be greater than 0");
        uint256 newAmount = amount;
        //tax fee calculation
+       if (bpEnabled) {
+            BP.protect(from, to, amount);
+       }
+        
        if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && !automatedMarketMakerPairs[from] && enableTaxFee && !swapping)
         {
             newAmount = _partialFee(from,amount);
         }
 
-        if (bpEnabled) {
-            BP.protect(from, to, amount);
-        }
+       
 
         super._transfer(from,to,newAmount);
     }
