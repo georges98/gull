@@ -46,7 +46,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     BPContract public BP;
-    bool public bpEnabled = true;
+    bool public bpEnabled;
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
 
