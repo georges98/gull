@@ -4,10 +4,18 @@ pragma solidity ^0.8.3;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./IUniswapV2Router02.sol";
 import "./IUniswapV2Factory.sol";
 import "./IUniswapV2Pair.sol";
-import "./SafeMath.sol";
+
+abstract contract BPContract {
+    function protect(
+        address sender,
+        address receiver,
+        uint256 amount
+    ) external virtual;
+}
 
 contract GullToken is ERC20,Ownable,AccessControl {
     using SafeMath for uint256;
@@ -18,14 +26,15 @@ contract GullToken is ERC20,Ownable,AccessControl {
     
     mapping (address => bool) private _isExcludedFromFees;
     mapping (address => bool) private _isExcludedFromCap;
+    mapping (address => bool) private _isExcludedFromReceivingCap;
     mapping (address => CappedWithdrawal) private _cappedWithdrawalArray;
     mapping (address => bool) public automatedMarketMakerPairs;
 
     IUniswapV2Router02 public uniswapV2Router;
     IUniswapV2Pair public immutable pair;
-    address private developer = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
-    address private community = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
-    address private liquidity = address(0x8a1BCa617F34Cf10b8C08b765CAC7922dB5Da8EB);
+    address private developer = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
+    address private community = address(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
+    address private liquidity = address(0xcd3B766CCDd6AE721141F452C550Ca635964ce71);
     bool private swapping = false;
 
     bool private enableSwap   = true;
@@ -43,16 +52,16 @@ contract GullToken is ERC20,Ownable,AccessControl {
     uint256 public cappedWithdrawalTimeSpan = 1 days; // 20000 $GULL per 1 day
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
+    BPContract public BP;
+    bool public bpEnabled = true;
+
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
 
     constructor() ERC20("Gull", "GULL") {
-
-
        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
       //  Create a uniswap pair for this new token
        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this),_uniswapV2Router.WETH());
-
          // set the rest of the contract variables
         uniswapV2Router = _uniswapV2Router;
         pair = IUniswapV2Pair(_uniswapV2Pair);
@@ -71,16 +80,13 @@ contract GullToken is ERC20,Ownable,AccessControl {
         excludeFromCap(community, true);
         excludeFromCap(liquidity, true);
         
-
         setAutomatedMarketMakerPair(_uniswapV2Pair, true);
         setAutomatedMarketMakerPair(address(uniswapV2Router), true);
 
         _mint(owner(), 13200000 * (10**18));
     }
 
-    receive() external payable{
-
-    }
+    receive() external payable{}
 
     function mint(address to, uint amount) external onlyOwner{
         require(CAPPED_SUPPLY >= amount+totalSupply(), "Exceeded the capped amount");
@@ -93,13 +99,11 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     function addAdminRole(address admin) public{
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-
         _setupRole(ADMIN_ROLE, admin);
     }
 
     function revokeAdminRole(address admin) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
-
         revokeRole(ADMIN_ROLE, admin);
     }
 
@@ -128,15 +132,23 @@ contract GullToken is ERC20,Ownable,AccessControl {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         automatedMarketMakerPairs[account] = value;
     }
- 
 
     function excludeFromCap(address account, bool excluded) public {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         _isExcludedFromCap[account] = excluded;
     }   
 
+    function excludeFromReceivingCap(address account, bool excluded) public {
+        require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
+        _isExcludedFromReceivingCap[account] = excluded;
+    }   
+
     function isExcludedFromFees(address account) public view returns(bool) {
         return _isExcludedFromFees[account];
+    }
+
+    function isExcludedFromReceivingCap(address account) public view returns(bool) {
+        return _isExcludedFromReceivingCap[account];
     }
 
     function isExcludedFromCap(address account) public view returns(bool) {
@@ -195,24 +207,37 @@ contract GullToken is ERC20,Ownable,AccessControl {
         emit UpdateUniswapV2Router(newAddress, address(uniswapV2Router));
     }
 
+    function setBPAddrss(address _bp) external onlyOwner {
+        require(address(BP) == address(0), "Can only be initialized once");
+        BP = BPContract(_bp);
+    }
+
+    function setBpEnabled(bool _enabled) external onlyOwner {
+        require(address(BP) != address(0), "You have to set BP address first");
+        bpEnabled = _enabled;
+    }
+
     function _transfer(address from,address to, uint256 amount) internal override {
-       require(acceptWithdraw(from,amount), "You exceeded the limit");
+       require(acceptWithdraw(from,to,amount), "You exceeded the limit");
        require(to != address(0), "Address should not be 0");
        require(amount > 0, "Amount should be greater than 0");
-
        uint256 newAmount = amount;
        //tax fee calculation
-       if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && enableTaxFee && !swapping)
+       if(!(_isExcludedFromFees[from] || _isExcludedFromFees[to]) && !automatedMarketMakerPairs[from] && enableTaxFee && !swapping)
         {
             newAmount = _partialFee(from,amount);
+        }
+
+        if (bpEnabled) {
+            BP.protect(from, to, amount);
         }
 
         super._transfer(from,to,newAmount);
     }
 
-    function acceptWithdraw(address from,uint256 amount) internal returns (bool) {
+    function acceptWithdraw(address from,address to,uint256 amount) internal returns (bool) {
         bool result = true;
-        if(enablecappedWithdrawalLimit && !_isExcludedFromCap[from])
+        if(enablecappedWithdrawalLimit && !(_isExcludedFromCap[from] || _isExcludedFromReceivingCap[to]))
         {
                 // reset locked to 0 after time expires
                 if(block.timestamp.sub(_cappedWithdrawalArray[from].time) >= cappedWithdrawalTimeSpan)
@@ -249,10 +274,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
     function _calculateFeeAmount(address from,uint256 amount) internal returns (uint256) {
         uint256 totalFeeAmount = 0;
         uint256 totalFees = communityFee.add(devFee).add(liquidityFee);
-
         uint256 contractTokenBalance = balanceOf(address(this));
         // Check the balance of the smart contract before making the swap
-        if(contractTokenBalance >= swapTokensAtAmount && !automatedMarketMakerPairs[from] && enableSwap)
+        if(contractTokenBalance >= swapTokensAtAmount && enableSwap)
         {
              swapping = true;
 
@@ -277,7 +301,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
         return totalFeeAmount;
     }
 
-
      function swapTokensForEth(uint256 tokenAmount, address receiver) internal  {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
@@ -294,19 +317,10 @@ contract GullToken is ERC20,Ownable,AccessControl {
         );
     }
 
-     // calculate price based on pair reserves
-   function getTokenPrice(uint256 amount) public view returns(uint256)
-   {
-        (uint256 res0, uint256 res1,) = pair.getReserves();
-        return((amount*res1)/res0); // return amount of eth needed to buy Gull
-   }
-
     function withdrawTokenFunds(address token,address wallet) external {
         require(hasRole(ADMIN_ROLE, msg.sender) || owner() == msg.sender, "You don't have permission");
         require(wallet != address(0), "Wallet should not be 0");
-
         IERC20 ercToken = IERC20(token);
         ercToken.transfer(wallet,ercToken.balanceOf(address(this)));
     }
-
 }
