@@ -8,14 +8,7 @@ import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "./IUniswapV2Router02.sol";
 import "./IUniswapV2Factory.sol";
 import "./IUniswapV2Pair.sol";
-
-abstract contract BPContract {
-    function protect(
-        address sender,
-        address receiver,
-        uint256 amount
-    ) external virtual;
-}
+import "./BPContract.sol";
 
 contract GullToken is ERC20,Ownable,AccessControl {
     using SafeMath for uint256;
