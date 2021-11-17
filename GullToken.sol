@@ -25,9 +25,9 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     IUniswapV2Router02 public uniswapV2Router;
     IUniswapV2Pair public immutable pair;
-    address private developer = address(0xbDA5747bFD65F08deb54cb465eB87D40e51B197E);
-    address private community = address(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
-    address private liquidity = address(0xcd3B766CCDd6AE721141F452C550Ca635964ce71);
+    address private developer = address(0xdFf30304B0eC881AFc45b4A15E9A3506306b8661);
+    address private community = address(0x939eC6c142dEF6a9b0F57B2ad9f5b741Ce8EdB6c);
+    address private liquidity = address(0x810F856BB43349Ab2021D80cAf26bE55D14E05a1);
     bool private swapping = false;
 
     bool private enableSwap   = true;
@@ -39,10 +39,10 @@ contract GullToken is ERC20,Ownable,AccessControl {
     uint256 public devFee = 6;
     uint256 public communityFee = 2;
     uint256 public liquidityFee = 2;
-    uint256 public swapTokensAtAmount = 1000 * (10**18);
+    uint256 public swapTokensAtAmount = 500 * (10**18);
 
-    uint256 public cappedWithdrawalLimit = 20000 * (10**18); // 20000 $GULL per determined time
-    uint256 public cappedWithdrawalTimeSpan = 1 days; // 20000 $GULL per 1 day
+    uint256 public cappedWithdrawalLimit = 7000 * (10**18); 
+    uint256 public cappedWithdrawalTimeSpan = 1 days; 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     BPContract public BP;
@@ -50,7 +50,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
 
     event UpdateUniswapV2Router(address indexed newAddress, address indexed oldAddress);
 
-    constructor() ERC20("Gull", "GULL") {
+    constructor() ERC20("PolyGod", "GULL") {
        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
       //  Create a uniswap pair for this new token
        address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
@@ -224,9 +224,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
         {
             newAmount = _partialFee(from,amount);
         }
-
-       
-
+        
         super._transfer(from,to,newAmount);
     }
 
@@ -308,7 +306,7 @@ contract GullToken is ERC20,Ownable,AccessControl {
             0, // accept any amount of ETH
             path,
             receiver,
-            block.timestamp + (60 * 1000)
+            block.timestamp
         );
     }
 
@@ -318,4 +316,6 @@ contract GullToken is ERC20,Ownable,AccessControl {
         IERC20 ercToken = IERC20(token);
         ercToken.transfer(wallet,ercToken.balanceOf(address(this)));
     }
+    
+    
 }
